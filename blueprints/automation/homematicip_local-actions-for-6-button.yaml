@@ -22,7 +22,7 @@ blueprint:
       name: Warn when CCU direct connections exist
       description: >
         If enabled, Home Assistant will create a persistent notification when the pressed channel
-        has direct CCU links (peers). This is the "grey-out equivalent": you get a warning at runtime.
+        has direct CCU links (peers).
       default: true
       selector:
         boolean: {}
@@ -114,6 +114,19 @@ variables:
   notify_on_direct_links: !input notify_on_direct_links
   skip_actions_when_direct_link: !input skip_actions_when_direct_link
 
+  action_left_top_short: !input action_left_top_short
+  action_left_top_long: !input action_left_top_long
+  action_right_top_short: !input action_right_top_short
+  action_right_top_long: !input action_right_top_long
+  action_left_middle_short: !input action_left_middle_short
+  action_left_middle_long: !input action_left_middle_long
+  action_right_middle_short: !input action_right_middle_short
+  action_right_middle_long: !input action_right_middle_long
+  action_left_bottom_short: !input action_left_bottom_short
+  action_left_bottom_long: !input action_left_bottom_long
+  action_right_bottom_short: !input action_right_bottom_short
+  action_right_bottom_long: !input action_right_bottom_long
+
 trigger:
   - platform: event
     event_type: homematic.keypress
@@ -127,6 +140,22 @@ condition:
 action:
   - variables:
       channel: "{{ trigger.event.data.subtype }}"
+      has_configured_action: >-
+        {% set t = trigger.event.data.type %}
+        {% set s = trigger.event.data.subtype %}
+        {% if t == 'press_short' and s == 1 %}{{ (action_left_top_short | default([])) | length > 0 }}
+        {% elif t == 'press_long' and s == 1 %}{{ (action_left_top_long | default([])) | length > 0 }}
+        {% elif t == 'press_short' and s == 2 %}{{ (action_right_top_short | default([])) | length > 0 }}
+        {% elif t == 'press_long' and s == 2 %}{{ (action_right_top_long | default([])) | length > 0 }}
+        {% elif t == 'press_short' and s == 3 %}{{ (action_left_middle_short | default([])) | length > 0 }}
+        {% elif t == 'press_long' and s == 3 %}{{ (action_left_middle_long | default([])) | length > 0 }}
+        {% elif t == 'press_short' and s == 4 %}{{ (action_right_middle_short | default([])) | length > 0 }}
+        {% elif t == 'press_long' and s == 4 %}{{ (action_right_middle_long | default([])) | length > 0 }}
+        {% elif t == 'press_short' and s == 5 %}{{ (action_left_bottom_short | default([])) | length > 0 }}
+        {% elif t == 'press_long' and s == 5 %}{{ (action_left_bottom_long | default([])) | length > 0 }}
+        {% elif t == 'press_short' and s == 6 %}{{ (action_right_bottom_short | default([])) | length > 0 }}
+        {% elif t == 'press_long' and s == 6 %}{{ (action_right_bottom_long | default([])) | length > 0 }}
+        {% else %}false{% endif %}
 
   - service: homematicip_local.get_link_peers
     data:
@@ -143,21 +172,21 @@ action:
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ notify_on_direct_links and has_direct_link }}"
+            value_template: "{{ notify_on_direct_links and has_direct_link and has_configured_action }}"
         sequence:
           - service: persistent_notification.create
             data:
               title: "Homematic CCU direct connection detected"
               message: >-
                 Device {{ trigger.event.data.device_id }}, channel {{ channel }} has direct CCU links (peers).
-                The CCU may already handle this button directly. Consider removing the direct connection
-                if you want Home Assistant to be the only handler.
-          - choose:
-              - conditions:
-                  - condition: template
-                    value_template: "{{ skip_actions_when_direct_link }}"
-                sequence:
-                  - stop: "Skipped blueprint actions: CCU direct connection exists for this channel."
+                A Home Assistant action is configured for this button, but the CCU may also handle it directly.
+
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ skip_actions_when_direct_link and has_direct_link and has_configured_action }}"
+        sequence:
+          - stop: "Skipped blueprint actions: CCU direct connection exists for this channel."
 
   - choose:
       - conditions:
