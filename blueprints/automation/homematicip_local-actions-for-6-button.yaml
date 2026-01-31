@@ -11,11 +11,12 @@ blueprint:
   source_url: https://github.com/sukramj/homematicip_local/blob/devel/blueprints/automation/homematicip_local-actions-for-6-button.yaml
   input:
     remote:
-      name: 6-Button Device
-      description: Please select a 6-Button device of your Homematic(IP) Local integration.
+      name: 6-Button Devices
+      description: Please select one or more 6-Button devices of your Homematic(IP) Local integration.
       selector:
         device:
           integration: homematicip_local
+          multiple: true
     action_left_top_short:
       name: Action
       description: Left-Top-Button, Short Press
@@ -88,12 +89,20 @@ blueprint:
       default: []
       selector:
         action: {}
+
+variables:
+  remotes: !input remote
+
 trigger:
   - platform: event
     event_type: homematic.keypress
-    event_data:
-      device_id: !input "remote"
-condition: []
+
+condition:
+  - condition: template
+    value_template: >-
+      {% set selected = remotes if remotes is list else [remotes] %}
+      {{ trigger.event.data.device_id in selected }}
+
 action:
   - choose:
       - conditions:
