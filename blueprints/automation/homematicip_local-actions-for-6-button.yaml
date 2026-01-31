@@ -17,6 +17,25 @@ blueprint:
         device:
           integration: homematicip_local
           multiple: true
+
+    notify_on_direct_links:
+      name: Warn when CCU direct connections exist
+      description: >
+        If enabled, Home Assistant will create a persistent notification when the pressed channel
+        has direct CCU links (peers). This is the "grey-out equivalent": you get a warning at runtime.
+      default: true
+      selector:
+        boolean: {}
+
+    skip_actions_when_direct_link:
+      name: Skip actions when CCU direct connection exists
+      description: >
+        If enabled, the blueprint will NOT run the configured actions for a button press when that
+        channel has direct CCU links (peers), to avoid duplicate behavior (CCU + HA).
+      default: false
+      selector:
+        boolean: {}
+
     action_left_top_short:
       name: Action
       description: Left-Top-Button, Short Press
@@ -92,6 +111,8 @@ blueprint:
 
 variables:
   remotes: !input remote
+  notify_on_direct_links: !input notify_on_direct_links
+  skip_actions_when_direct_link: !input skip_actions_when_direct_link
 
 trigger:
   - platform: event
@@ -104,6 +125,40 @@ condition:
       {{ trigger.event.data.device_id in selected }}
 
 action:
+  - variables:
+      channel: "{{ trigger.event.data.subtype }}"
+
+  - service: homematicip_local.get_link_peers
+    data:
+      device_id: "{{ trigger.event.data.device_id }}"
+      channel: "{{ channel }}"
+    response_variable: link_peers
+
+  - variables:
+      direct_link_peer_count: >-
+        {% set lists = (link_peers.values() | list) if link_peers is mapping else [] %}
+        {{ lists | map('count') | sum }}
+      has_direct_link: "{{ (direct_link_peer_count | int(0)) > 0 }}"
+
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ notify_on_direct_links and has_direct_link }}"
+        sequence:
+          - service: persistent_notification.create
+            data:
+              title: "Homematic CCU direct connection detected"
+              message: >-
+                Device {{ trigger.event.data.device_id }}, channel {{ channel }} has direct CCU links (peers).
+                The CCU may already handle this button directly. Consider removing the direct connection
+                if you want Home Assistant to be the only handler.
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ skip_actions_when_direct_link }}"
+                sequence:
+                  - stop: "Skipped blueprint actions: CCU direct connection exists for this channel."
+
   - choose:
       - conditions:
           - condition: template
@@ -153,5 +208,6 @@ action:
           - condition: template
             value_template: "{{ trigger.event.data.type  == 'press_long' and trigger.event.data.subtype  == 6 }}"
         sequence: !input "action_right_bottom_long"
+
 mode: parallel
 max: 10
